@@ -1,7 +1,8 @@
 import Foundation
 
 /// 近くの記事から「話のネタになりそうなもの」を選ぶ。
-/// 都市部では座標付き記事の多くが駅・学校・ビルなので、近い順に並べるとそればかりになる。
+/// 建物・学校・駅・山のように「それ自体の説明で終わる記事」より、
+/// 由来・出来事・伝承など、ほかの知識に話が広がる記事を優先する。
 enum Interest {
     struct Candidate {
         let article: NearbyArticle
@@ -12,36 +13,54 @@ enum Interest {
     /// 駅の記事を混ぜる確率。混ぜるときも1段階につき1枚まで
     static let stationChance = 0.25
 
-    /// 冒頭にこれがあると、うんちくになりやすい
+    /// 冒頭にこれがあると、話が広がりやすい
     static let hooks: [(word: String, bonus: Double)] = [
         ("由来", 3), ("語源", 3), ("名付け", 2), ("呼ばれ", 1), ("旧称", 1.5),
-        ("伝説", 2), ("伝承", 2), ("逸話", 2),
+        ("伝説", 2.5), ("伝承", 2.5), ("逸話", 2.5),
+        ("合戦", 2.5), ("戦い", 1.5), ("事件", 2), ("一揆", 2), ("陣", 1),
         ("古墳", 2), ("遺跡", 2), ("城跡", 2), ("跡", 1), ("史跡", 1.5),
-        ("縄文", 1.5), ("弥生", 1.5), ("奈良時代", 1.5), ("平安", 1.5), ("鎌倉", 1.5), ("戦国", 1.5),
-        ("江戸時代", 1), ("明治", 0.5), ("創建", 1), ("かつて", 1), ("最古", 2), ("唯一", 1.5), ("日本初", 2),
+        ("縄文", 1.5), ("弥生", 1.5), ("飛鳥", 1.5), ("奈良時代", 1.5), ("平安", 1.5), ("鎌倉", 1.5), ("室町", 1.5), ("戦国", 1.5),
+        ("江戸時代", 1), ("創建", 1), ("発祥", 2), ("かつて", 1), ("最古", 2), ("唯一", 1.5), ("日本初", 2),
     ]
 
-    /// 話のネタになりにくい題名（除外はせず、ほかに候補がなければ出す）
+    /// それ自体の説明で終わりやすい題名（除外はせず、大きく減点する）
     static let dullSuffixes = [
-        "小学校", "中学校", "高等学校", "高校", "大学", "学園", "幼稚園",
+        "小学校", "中学校", "高等学校", "高校", "大学", "学園", "学院", "幼稚園", "保育園",
         "郵便局", "銀行", "支店", "病院", "クリニック", "警察署", "消防署", "図書館", "センター",
-        "ビル", "タワー", "マンション", "ホテル", "店", "ストア", "本社", "会社", "工場",
-        "線", "道路", "交差点", "インターチェンジ", "出入口", "ジャンクション", "停留場", "停留所",
+        "市役所", "区役所", "町役場", "庁舎", "会館", "ホール", "スタジアム", "ドーム", "団地",
+        "ビル", "ビルディング", "タワー", "マンション", "ホテル", "店", "百貨店", "ストア", "モール",
+        "本社", "会社", "工場", "寮",
+        "線", "道路", "号線", "交差点", "インターチェンジ", "出入口", "ジャンクション", "停留場", "停留所", "トンネル",
     ]
 
-    static func isStation(_ hit: GeoHit) -> Bool {
-        hit.type == "railwaystation" || TierClassifier.baseName(hit.title).hasSuffix("駅")
+    /// 山や川は話が広がるものもあるので、減点は軽め（合戦や伝説があれば上に来る）
+    static let natureSuffixes = ["山", "岳", "峰", "川", "池", "湖"]
+
+    static func isStation(title: String) -> Bool {
+        WikipediaClient.baseName(title).hasSuffix("駅")
     }
 
-    static func score(title: String, extract: String, length: Int, distance: Double, tier: Tier) -> Double {
-        let name = TierClassifier.baseName(title)
+    static func isDull(title: String) -> Bool {
+        let name = WikipediaClient.baseName(title)
+        return isStation(title: title) || dullSuffixes.contains(where: { name.hasSuffix($0) })
+    }
+
+    static func score(title: String, extract: String, length: Int, searchRank: Int?, distance: Double, tier: Tier) -> Double {
+        let name = WikipediaClient.baseName(title)
         // 長い記事ほど読みごたえがある（対数なので長さの効きはゆるやか）
         var score = log(Double(max(length, 1_000)))
+
         for hook in hooks where extract.contains(hook.word) {
             score += hook.bonus
         }
-        if dullSuffixes.contains(where: { name.hasSuffix($0) }) {
-            score -= 4
+        // 検索で上位に来た記事は、話のネタになる言葉が本文によく出てくる
+        if let rank = searchRank {
+            score += 3 * max(0, 1 - Double(rank) / 30)
+        }
+        if isDull(title: title) {
+            score -= 6
+        } else if natureSuffixes.contains(where: { name.hasSuffix($0) }) {
+            score -= 2
         }
         if tier == .footstep {
             // 足元は近いほうが見に行ける

@@ -22,8 +22,8 @@
   自信のない API は使わず、確実に存在するものを使う
 
 ## 構成
-- `WikipediaClient.swift` — GeoSearch / TextExtracts の呼び出し、3段階への振り分け（`TierClassifier`）
-- `Interest.swift` — 記事の面白さスコアと選択。駅の記事は4回に1回・1枚まで
+- `WikipediaClient.swift` — 記事の取得。足元は GeoSearch、町・広域は全文検索の `nearcoord:` で「由来・伝説・合戦」などを含む記事を探し、距離で3段階に分ける。おすすめは秀逸な記事・良質な記事からランダム
+- `Interest.swift` — 記事の面白さスコアと選択。建物・学校などは大きく減点、山・川は軽く減点。駅の記事は4回に1回・1枚まで
 - `LocationService.swift` — 位置取得、キャッシュ、通知、覚えた場所の領域監視、ワープ（`WarpSpot`）
 - `Models.swift` — `KnowledgeCard`（SwiftData）と間隔反復（`ReviewScheduler`）
 - `Notifier.swift` — ローカル通知と回数制限

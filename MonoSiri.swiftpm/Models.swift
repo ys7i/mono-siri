@@ -2,25 +2,30 @@ import Foundation
 import SwiftData
 import CoreLocation
 
-/// 距離による3段階
+/// 記事の分類。距離による3段階と、場所に関係ない「おすすめ」
 enum Tier: String, Codable, CaseIterable, Identifiable, Sendable {
-    case footstep, town, region
+    case footstep, town, region, featured
 
     var id: String { rawValue }
+
+    /// 現在地からの距離で分ける段階
+    static let byDistance: [Tier] = [.footstep, .town, .region]
 
     var label: String {
         switch self {
         case .footstep: return "足元"
         case .town: return "町"
         case .region: return "広域"
+        case .featured: return "おすすめ"
         }
     }
 
     var caption: String {
         switch self {
         case .footstep: return "〜300m・歩いて見に行けるもの"
-        case .town: return "〜2km・町名や駅名の由来"
-        case .region: return "〜10km・川や山など土地の骨格"
+        case .town: return "〜2km・この町の由来や出来事"
+        case .region: return "〜10km・この辺りが舞台になった歴史"
+        case .featured: return "場所を問わず・秀逸な記事と良質な記事からランダム"
         }
     }
 
@@ -28,7 +33,8 @@ enum Tier: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .footstep: return "figure.walk"
         case .town: return "building.2"
-        case .region: return "mountain.2"
+        case .region: return "map"
+        case .featured: return "star"
         }
     }
 }

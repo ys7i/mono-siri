@@ -15,6 +15,9 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     var nearby: [Tier: [NearbyArticle]] = [:]
     var isLoading = false
     var lastError: String?
+    /// 場所に関係ないおすすめ記事
+    var featured: [NearbyArticle] = []
+    var isLoadingFeatured = false
     /// ワープ中の地点名（nil なら実際の現在地を使う）
     var warpName: String?
 
@@ -65,6 +68,18 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
         warpName = spot.name
         await handle(location: spot.location)
+    }
+
+    /// 秀逸な記事・良質な記事からランダムに選び直す（位置情報の許可がなくても使える）
+    func loadFeatured() async {
+        guard !isLoadingFeatured else { return }
+        isLoadingFeatured = true
+        defer { isLoadingFeatured = false }
+        do {
+            featured = try await wiki.featured()
+        } catch {
+            lastError = "おすすめ記事を取得できませんでした（\(error.localizedDescription)）"
+        }
     }
 
     func refresh(force: Bool) async {

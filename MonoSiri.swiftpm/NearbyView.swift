@@ -44,7 +44,21 @@ struct NearbyView: View {
                     Section { Text(error).font(.footnote).foregroundStyle(.secondary) }
                 }
 
-                ForEach(Tier.allCases) { tier in
+                if (location.isAuthorized || location.warpName != nil) && isEmpty {
+                    Section {
+                        if location.isLoading || location.currentLocation == nil {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("近くの記事を探しています").foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text("近くに記事が見つかりません。少し移動してから引っぱって更新してください。")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                ForEach(Tier.byDistance) { tier in
                     let items = location.nearby[tier] ?? []
                     if !items.isEmpty {
                         Section {
@@ -59,6 +73,35 @@ struct NearbyView: View {
                                 Text(tier.caption).font(.caption).textCase(nil)
                             }
                         }
+                    }
+                }
+
+                Section {
+                    if location.featured.isEmpty {
+                        if location.isLoadingFeatured {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("おすすめ記事を選んでいます").foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text("まだ記事がありません。下のボタンで読み込みます。").foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(location.featured) { article in
+                        NavigationLink(value: article) {
+                            ArticleRow(article: article, learned: learnedIDs.contains(article.pageID))
+                        }
+                    }
+                    Button {
+                        Task { await location.loadFeatured() }
+                    } label: {
+                        Label("ほかの記事にする", systemImage: "shuffle")
+                    }
+                    .disabled(location.isLoadingFeatured)
+                } header: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(Tier.featured.label, systemImage: Tier.featured.symbol).font(.headline)
+                        Text(Tier.featured.caption).font(.caption).textCase(nil)
                     }
                 }
             }
@@ -79,16 +122,13 @@ struct NearbyView: View {
                 }
             }
             .navigationDestination(for: NearbyArticle.self) { ArticleDetailView(article: $0) }
-            .overlay {
-                if (location.isAuthorized || location.warpName != nil) && isEmpty {
-                    if location.isLoading || location.currentLocation == nil {
-                        ProgressView("近くの記事を探しています")
-                    } else {
-                        ContentUnavailableView("近くに記事が見つかりません", systemImage: "map", description: Text("少し移動してから引っぱって更新してください。"))
-                    }
-                }
+            .refreshable {
+                await location.refresh(force: true)
+                await location.loadFeatured()
             }
-            .refreshable { await location.refresh(force: true) }
+            .task {
+                if location.featured.isEmpty { await location.loadFeatured() }
+            }
         }
     }
 }
@@ -109,7 +149,9 @@ struct ArticleRow: View {
                 Text(article.extract).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 0)
-            Text(article.distance.distanceText).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            if let distance = article.distance {
+                Text(distance.distanceText).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -144,7 +186,9 @@ struct ArticleDetailView: View {
 
                 HStack(spacing: 12) {
                     Label(article.tier.label, systemImage: article.tier.symbol)
-                    Label(article.distance.distanceText, systemImage: "location")
+                    if let distance = article.distance {
+                        Label(distance.distanceText, systemImage: "location")
+                    }
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
