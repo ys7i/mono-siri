@@ -131,22 +131,8 @@ struct WikipediaClient: Sendable {
         let ids = Array(hits.map(\.pageid).prefix(count * 2))
         let infos = try await pages(ids: ids)
 
-        let articles: [NearbyArticle] = ids.compactMap { id in
-            guard let info = infos[id],
-                  let title = info.title,
-                  let extract = info.extract?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !extract.isEmpty else { return nil }
-            let coordinate = info.coordinates?.first
-            return NearbyArticle(
-                pageID: id,
-                title: title,
-                latitude: coordinate?.lat ?? 0,
-                longitude: coordinate?.lon ?? 0,
-                distance: nil,
-                tier: .featured,
-                extract: Self.trim(extract),
-                thumbnailURL: info.thumbnail.flatMap { URL(string: $0.source) }
-            )
+        let articles = ids.compactMap { id in
+            infos[id].flatMap { Self.article(from: $0, tier: .featured) }
         }
         return Array(articles.prefix(count))
     }
@@ -198,13 +184,79 @@ struct WikipediaClient: Sendable {
         return response.query?.categorymembers ?? []
     }
 
-    private func pages(ids: [Int]) async throws -> [Int: PageInfo] {
-        // exintro 付きの TextExtracts は1回20件までなので、20件ずつ並列に取る
-        let chunks = stride(from: 0, to: ids.count, by: 20).map { Array(ids[$0..<min($0 + 20, ids.count)]) }
-        return try await withThrowingTaskGroup(of: [PageInfo].self, returning: [Int: PageInfo].self) { group in
+    /// ページIDで記事の冒頭・画像・座標をまとめて取る
+    func pages(ids: [Int]) async throws -> [Int: PageInfo] {
+        let responses = try await pageQueries(ids.map(String.init), key: "pageids")
+        var out: [Int: PageInfo] = [:]
+        for response in responses {
+            for page in response.query?.pages ?? [] {
+                if let id = page.pageid { out[id] = page }
+            }
+        }
+        return out
+    }
+
+    /// 記事名で取る。返り値のキーは渡した記事名（表記ゆれ・リダイレクトはたどって対応づける）
+    func pages(titles: [String]) async throws -> [String: PageInfo] {
+        let unique = Array(Set(titles))
+        let responses = try await pageQueries(unique, key: "titles")
+        var byTitle: [String: PageInfo] = [:]
+        var normalized: [String: String] = [:]
+        var redirects: [String: String] = [:]
+        for response in responses {
+            for page in response.query?.pages ?? [] {
+                if let title = page.title, page.pageid != nil { byTitle[title] = page }
+            }
+            for map in response.query?.normalized ?? [] { normalized[map.from] = map.to }
+            for map in response.query?.redirects ?? [] { redirects[map.from] = map.to }
+        }
+        var out: [String: PageInfo] = [:]
+        for title in unique {
+            var resolved = normalized[title] ?? title
+            resolved = redirects[resolved] ?? resolved
+            if let page = byTitle[resolved] { out[title] = page }
+        }
+        return out
+    }
+
+    /// ページのウィキテキスト（書かれたままの原文）
+    func wikitext(page: String) async throws -> String {
+        let response: ParseResponse = try await get([
+            "action": "parse",
+            "page": page,
+            "prop": "wikitext",
+            "redirects": "1",
+        ])
+        guard let text = response.parse?.wikitext else { throw URLError(.fileDoesNotExist) }
+        return text
+    }
+
+    /// PageInfo を画面用の記事にする。冒頭の文章がない記事は nil
+    static func article(from info: PageInfo, tier: Tier, distance: Double? = nil) -> NearbyArticle? {
+        guard let id = info.pageid,
+              let title = info.title,
+              let extract = info.extract?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !extract.isEmpty else { return nil }
+        let coordinate = info.coordinates?.first
+        return NearbyArticle(
+            pageID: id,
+            title: title,
+            latitude: coordinate?.lat ?? 0,
+            longitude: coordinate?.lon ?? 0,
+            distance: distance,
+            tier: tier,
+            extract: trim(extract),
+            thumbnailURL: info.thumbnail.flatMap { URL(string: $0.source) }
+        )
+    }
+
+    /// exintro 付きの TextExtracts は1回20件までなので、20件ずつ並列に取る
+    private func pageQueries(_ values: [String], key: String) async throws -> [PagesResponse] {
+        let chunks = stride(from: 0, to: values.count, by: 20).map { Array(values[$0..<min($0 + 20, values.count)]) }
+        return try await withThrowingTaskGroup(of: PagesResponse.self, returning: [PagesResponse].self) { group in
             for chunk in chunks {
                 group.addTask {
-                    let response: PagesResponse = try await self.get([
+                    try await self.get([
                         "action": "query",
                         "prop": "extracts|pageimages|info|coordinates",
                         "exintro": "1",
@@ -213,16 +265,14 @@ struct WikipediaClient: Sendable {
                         "piprop": "thumbnail",
                         "pithumbsize": "480",
                         "colimit": "max",
-                        "pageids": chunk.map(String.init).joined(separator: "|"),
+                        "redirects": "1",
+                        key: chunk.joined(separator: "|"),
                     ])
-                    return response.query?.pages ?? []
                 }
             }
-            var out: [Int: PageInfo] = [:]
-            for try await list in group {
-                for page in list {
-                    if let id = page.pageid { out[id] = page }
-                }
+            var out: [PagesResponse] = []
+            for try await response in group {
+                out.append(response)
             }
             return out
         }
@@ -316,7 +366,20 @@ struct PageInfo: Decodable, Sendable {
     let coordinates: [Coordinate]?
 }
 
-private struct PagesResponse: Decodable {
-    struct Query: Decodable { let pages: [PageInfo]? }
+private struct PagesResponse: Decodable, Sendable {
+    struct TitleMap: Decodable, Sendable {
+        let from: String
+        let to: String
+    }
+    struct Query: Decodable, Sendable {
+        let pages: [PageInfo]?
+        let normalized: [TitleMap]?
+        let redirects: [TitleMap]?
+    }
     let query: Query?
+}
+
+private struct ParseResponse: Decodable {
+    struct Parse: Decodable { let wikitext: String? }
+    let parse: Parse?
 }

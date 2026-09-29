@@ -8,6 +8,9 @@ struct ContentView: View {
     var body: some View {
         @Bindable var bindableRouter = router
         TabView(selection: $bindableRouter.tab) {
+            FeedView()
+                .tabItem { Label("めくる", systemImage: "rectangle.stack") }
+                .tag(AppRouter.Tab.feed)
             NearbyView()
                 .tabItem { Label("近く", systemImage: "location") }
                 .tag(AppRouter.Tab.nearby)

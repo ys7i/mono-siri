@@ -2,9 +2,9 @@ import Foundation
 import SwiftData
 import CoreLocation
 
-/// 記事の分類。距離による3段階と、場所に関係ない「おすすめ」
+/// 記事の分類。距離による3段階と、場所に関係ないもの（おすすめ・新しい記事・今日は何の日）
 enum Tier: String, Codable, CaseIterable, Identifiable, Sendable {
-    case footstep, town, region, featured
+    case footstep, town, region, featured, trivia, today
 
     var id: String { rawValue }
 
@@ -17,6 +17,8 @@ enum Tier: String, Codable, CaseIterable, Identifiable, Sendable {
         case .town: return "町"
         case .region: return "広域"
         case .featured: return "おすすめ"
+        case .trivia: return "新しい記事"
+        case .today: return "今日は何の日"
         }
     }
 
@@ -26,6 +28,8 @@ enum Tier: String, Codable, CaseIterable, Identifiable, Sendable {
         case .town: return "〜2km・この町の由来や出来事"
         case .region: return "〜10km・この辺りが舞台になった歴史"
         case .featured: return "場所を問わず・秀逸な記事と良質な記事からランダム"
+        case .trivia: return "Wikipediaに最近できた記事から"
+        case .today: return "過去の今日のできごと"
         }
     }
 
@@ -35,6 +39,8 @@ enum Tier: String, Codable, CaseIterable, Identifiable, Sendable {
         case .town: return "building.2"
         case .region: return "map"
         case .featured: return "star"
+        case .trivia: return "lightbulb"
+        case .today: return "calendar"
         }
     }
 }

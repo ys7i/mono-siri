@@ -11,6 +11,7 @@ struct MonoSiriApp: App {
             ContentView()
                 .environment(AppEnvironment.shared.router)
                 .environment(AppEnvironment.shared.location)
+                .environment(AppEnvironment.shared.feed)
         }
         .modelContainer(AppEnvironment.shared.container)
     }
@@ -25,6 +26,7 @@ final class AppEnvironment {
     let container: ModelContainer
     let router = AppRouter()
     let location: LocationService
+    let feed: FeedService
 
     private init() {
         do {
@@ -32,16 +34,18 @@ final class AppEnvironment {
         } catch {
             fatalError("データベースを開けませんでした: \(error)")
         }
-        location = LocationService(container: container, wiki: WikipediaClient())
+        let wiki = WikipediaClient()
+        location = LocationService(container: container, wiki: wiki)
+        feed = FeedService(wiki: wiki)
     }
 }
 
 @MainActor
 @Observable
 final class AppRouter {
-    enum Tab: Hashable { case nearby, review, library }
+    enum Tab: Hashable { case feed, nearby, review, library }
 
-    var tab: Tab = .nearby
+    var tab: Tab = .feed
     /// 復習通知から開かれたときの対象カード
     var reviewFocusPageID: Int?
 
