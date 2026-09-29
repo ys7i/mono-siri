@@ -16,7 +16,7 @@ let package = Package(
         .iOSApplication(
             name: "モノシリ",
             targets: ["AppModule"],
-            bundleIdentifier: "com.example.monosiri",
+            bundleIdentifier: "io.github.ys7i.monosiri",
             teamIdentifier: "",
             displayVersion: "0.1.0",
             bundleVersion: "1",
